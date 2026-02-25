@@ -1,6 +1,6 @@
 # xsess
 
-Express session middleware with cookie and header support — works seamlessly with both browser and API/mobile clients.
+Framework-agnostic session middleware with cookie and header support — works seamlessly with Express, Hono, and any Web Standard framework.
 
 Unlike `express-session`, xsess accepts session tokens from both cookies and the `X-Session` header, making it a drop-in choice for APIs consumed by browsers, mobile apps, and other HTTP clients.
 
@@ -12,9 +12,11 @@ pnpm add xsess
 
 ## Quick Start
 
+### Express
+
 ```ts
 import express from 'express';
-import { session } from 'xsess';
+import { session } from 'xsess/express';
 
 const app = express();
 
@@ -30,6 +32,23 @@ app.get('/', (req, res) => {
 });
 ```
 
+### Hono
+
+```ts
+import { Hono } from 'hono';
+import { session } from 'xsess/hono';
+
+const app = new Hono();
+
+app.use(session({ secret: process.env.SESSION_SECRET! }));
+
+app.get('/', (c) => {
+  const sess = c.get('session');
+  sess.views = ((sess.views as number) ?? 0) + 1;
+  return c.json({ views: sess.views });
+});
+```
+
 ## Options
 
 ```ts
@@ -40,21 +59,21 @@ session({
   // Secret for signing session IDs (required)
   secret: 'my-secret',
 
-  // Session store (default: in-memory store)
-  store: new MyCustomStore(),
+  // Session storage (default: in-memory storage)
+  storage: new MyCustomStorage(),
 
   // Re-set cookie on every response to refresh maxAge (default: false)
   rolling: false,
 
-  // Save session to the store on every response, even if unmodified (default: false)
+  // Save session to storage on every response, even if unmodified (default: false)
   resave: false,
 
-  // Save new sessions with no data to the store (default: false)
+  // Save new sessions with no data to storage (default: false)
   saveUninitialized: false,
 
-  // Standard Express cookie options
+  // Cookie options
   cookie: {
-    maxAge: 86_400_000, // 1 day
+    maxAge: 86_400, // 1 day (in seconds)
     httpOnly: true,
     secure: true,
     sameSite: 'lax',
@@ -82,41 +101,41 @@ Controls when the session ID is included in the response header:
 
 ```ts
 // Read/write session data
-req.session.userId = 42;
+session.userId = 42;
 
 // Session ID
-req.session.id;        // unsigned
-req.session.signedId;  // signed with secret
+session.id;        // unsigned
+session.signedId;  // signed with secret
 
 // Cookie options (can be modified per-session)
-req.session.cookie;
+session.cookie;
 
-// Persist session to store
-await req.session.save();
+// Persist session to storage
+await session.save();
 
 // Destroy session and clear cookie
-await req.session.destroy();
+await session.destroy();
 
 // Generate new session ID, preserving data
-await req.session.regenerate();
+await session.regenerate();
 ```
 
 All methods support both promises and callbacks:
 
 ```ts
-await req.session.save();
-req.session.save((err) => { /* ... */ });
+await session.save();
+session.save((err) => { /* ... */ });
 ```
 
-## Custom Stores
+## Custom Storage
 
-Extend the `Store` base class to implement a custom store:
+Extend the `Storage` base class to implement a custom storage backend:
 
 ```ts
-import { Store } from 'xsess';
+import { Storage } from 'xsess';
 import type { StoredSession } from 'xsess';
 
-class RedisStore extends Store {
+class RedisStorage extends Storage {
   async get(id: string): Promise<StoredSession | null> {
     const data = await redis.get(`sess:${id}`);
     if (!data) return null;
@@ -126,9 +145,7 @@ class RedisStore extends Store {
   }
 
   async set(id: string, session: StoredSession): Promise<void> {
-    const ttl = session.cookie.originalMaxAge
-      ? Math.ceil(session.cookie.originalMaxAge / 1000)
-      : 86400;
+    const ttl = session.cookie.originalMaxAge ?? 86400;
     await redis.set(`sess:${id}`, JSON.stringify(session), 'EX', ttl);
   }
 
@@ -138,7 +155,7 @@ class RedisStore extends Store {
 }
 ```
 
-The `Store` base class provides:
+The `Storage` base class provides:
 
 - `isExpired(session)` — check if a session has expired based on its cookie
 - `touch(id, session)` — update session expiry without rewriting data (defaults to calling `set`)
@@ -146,9 +163,9 @@ The `Store` base class provides:
 ## How It Works
 
 1. On each request, xsess looks for a session ID in the cookie first, then falls back to the request header.
-2. If found and valid, the session is loaded from the store.
+2. If found and valid, the session is loaded from storage.
 3. If not found, a new session is created with a UUID v7 ID.
-4. Session data is saved before the response completes (via `res.end()` interception), ensuring sequential requests always see the latest state.
+4. Session data is saved when the response completes, ensuring sequential requests always see the latest state.
 5. Cookies are set for new sessions (and on every response if `rolling` is enabled).
 6. The response header is set based on the `header.policy` option.
 

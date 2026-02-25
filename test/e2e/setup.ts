@@ -1,17 +1,18 @@
 import express from 'express';
-import { session, type SessionOptions } from '../../src/index.js';
-import { MemoryStore } from '../../src/stores/memory.js';
+import { session } from '../../src/middleware/express/express.js';
+import { MemoryStorage } from '../../src/storage/memory.js';
+import type { SessionOptions } from '../../src/core/resolve.js';
 
 export const TEST_SECRET = 'test-secret';
 
 export function createApp(overrides?: Partial<SessionOptions>) {
   const app = express();
-  const store = new MemoryStore();
+  const storage = new MemoryStorage();
 
   app.use(
     session({
       secret: TEST_SECRET,
-      store,
+      storage,
       ...overrides,
     }),
   );
@@ -42,5 +43,5 @@ export function createApp(overrides?: Partial<SessionOptions>) {
     });
   });
 
-  return { app, store };
+  return { app, storage };
 }

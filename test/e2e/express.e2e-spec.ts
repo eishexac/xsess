@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import request from 'supertest';
 import express from 'express';
 import { sign } from 'cookie-signature';
-import { session } from '../../src/index.js';
+import { session } from '../../src/middleware/express/express.js';
 import { createApp, TEST_SECRET } from './setup.js';
 
 function extractSessionCookie(res: request.Response): string | undefined {
@@ -208,7 +208,7 @@ describe('session middleware (e2e)', () => {
 
   describe('auto-save', () => {
     it('does not auto-save after destroy', async () => {
-      const { app, store } = createApp();
+      const { app, storage } = createApp();
       const agent = request.agent(app);
 
       const first = await agent.get('/set');
@@ -217,38 +217,38 @@ describe('session middleware (e2e)', () => {
       const sessionId = sidMatch![1].split('.')[0];
 
       await agent.post('/destroy');
-      expect(store.get(sessionId)).toBeNull();
+      expect(storage.get(sessionId)).toBeNull();
     });
   });
 
   describe('saveUninitialized', () => {
     it('does not save empty new sessions to store when false (default)', async () => {
-      const { app, store } = createApp();
-      const spy = vi.spyOn(store, 'set');
+      const { app, storage } = createApp();
+      const spy = vi.spyOn(storage, 'set');
       await request(app).get('/noop');
       expect(spy).not.toHaveBeenCalled();
     });
 
     it('saves new sessions with data to store when false', async () => {
-      const { app, store } = createApp();
-      const spy = vi.spyOn(store, 'set');
+      const { app, storage } = createApp();
+      const spy = vi.spyOn(storage, 'set');
       await request(app).get('/set');
       expect(spy).toHaveBeenCalled();
     });
 
     it('saves empty new sessions to store when true', async () => {
-      const { app, store } = createApp({ saveUninitialized: true });
-      const spy = vi.spyOn(store, 'set');
+      const { app, storage } = createApp({ saveUninitialized: true });
+      const spy = vi.spyOn(storage, 'set');
       await request(app).get('/noop');
       expect(spy).toHaveBeenCalled();
     });
 
     it('saveUninitialized does not affect existing modified sessions', async () => {
-      const { app, store } = createApp({ saveUninitialized: false });
+      const { app, storage } = createApp({ saveUninitialized: false });
       const agent = request.agent(app);
 
       await agent.get('/set');
-      const spy = vi.spyOn(store, 'set');
+      const spy = vi.spyOn(storage, 'set');
       await agent.get('/set');
       expect(spy).toHaveBeenCalled();
     });
@@ -256,31 +256,31 @@ describe('session middleware (e2e)', () => {
 
   describe('resave', () => {
     it('does not save existing unmodified sessions when false (default)', async () => {
-      const { app, store } = createApp();
+      const { app, storage } = createApp();
       const agent = request.agent(app);
 
       await agent.get('/set');
-      const spy = vi.spyOn(store, 'set');
+      const spy = vi.spyOn(storage, 'set');
       await agent.get('/noop');
       expect(spy).not.toHaveBeenCalled();
     });
 
     it('saves existing modified sessions when false', async () => {
-      const { app, store } = createApp();
+      const { app, storage } = createApp();
       const agent = request.agent(app);
 
       await agent.get('/set');
-      const spy = vi.spyOn(store, 'set');
+      const spy = vi.spyOn(storage, 'set');
       await agent.get('/set');
       expect(spy).toHaveBeenCalled();
     });
 
     it('saves existing unmodified sessions when true', async () => {
-      const { app, store } = createApp({ resave: true });
+      const { app, storage } = createApp({ resave: true });
       const agent = request.agent(app);
 
       await agent.get('/set');
-      const spy = vi.spyOn(store, 'set');
+      const spy = vi.spyOn(storage, 'set');
       await agent.get('/noop');
       expect(spy).toHaveBeenCalled();
     });
@@ -357,7 +357,7 @@ describe('session middleware (e2e)', () => {
       };
 
       const app = express();
-      app.use(session({ secret: TEST_SECRET, store: asyncStore as any }));
+      app.use(session({ secret: TEST_SECRET, storage: asyncStore as any }));
       app.get('/set', (req, res) => {
         req.session.count = ((req.session.count as number) ?? 0) + 1;
         res.json({ count: req.session.count });
@@ -382,7 +382,7 @@ describe('session middleware (e2e)', () => {
         set() {},
         destroy() {},
       };
-      app.use(session({ secret: TEST_SECRET, store: failingStore as any }));
+      app.use(session({ secret: TEST_SECRET, storage: failingStore as any }));
       app.get('/test', (_req, res) => res.json({ ok: true }));
       app.use((err: any, _req: any, res: any, _next: any) => {
         res.status(500).json({ error: err.message });
@@ -416,7 +416,7 @@ describe('session middleware (e2e)', () => {
       };
 
       const app = express();
-      app.use(session({ secret: TEST_SECRET, store: store as any }));
+      app.use(session({ secret: TEST_SECRET, storage: store as any }));
       app.get('/set', (req, res) => {
         req.session.count = 1;
         res.json({ count: req.session.count });
@@ -442,7 +442,7 @@ describe('session middleware (e2e)', () => {
       };
 
       const app = express();
-      app.use(session({ secret: TEST_SECRET, store: store as any }));
+      app.use(session({ secret: TEST_SECRET, storage: store as any }));
       app.get('/set', (req, res) => {
         req.session.count = 1;
         res.json({ count: req.session.count });

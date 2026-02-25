@@ -1,9 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
-import { createSession } from './session.js';
-import { MemoryStore } from './stores/memory.js';
-import type { SessionStore, StoredSession } from './types/index.js';
+import { createSession, type StoredSession } from './session.js';
+import { MemoryStorage } from '../storage/memory.js';
+import { Storage } from '../storage/storage.js';
 
-class FailingStore implements SessionStore {
+class FailingStorage extends Storage {
   get(): StoredSession | null {
     return null;
   }
@@ -13,13 +13,6 @@ class FailingStore implements SessionStore {
   destroy(): void {
     throw new Error('store destroy failed');
   }
-}
-
-function mockRes() {
-  return {
-    getHeader: vi.fn(),
-    setHeader: vi.fn(),
-  } as any;
 }
 
 function makeCookie() {
@@ -39,9 +32,7 @@ describe('createSession', () => {
       existingSession: null,
       cookieDefaults: undefined,
       secret: 'secret',
-      store: new MemoryStore(),
-      res: mockRes(),
-      cookieName: 'sid',
+      storage: new MemoryStorage(),
     });
 
     expect(sess.id).toBe('test-id');
@@ -60,9 +51,7 @@ describe('createSession', () => {
       existingSession: existing,
       cookieDefaults: undefined,
       secret: 'secret',
-      store: new MemoryStore(),
-      res: mockRes(),
-      cookieName: 'sid',
+      storage: new MemoryStorage(),
     });
 
     expect(sess.userId).toBe(42);
@@ -75,9 +64,7 @@ describe('createSession', () => {
       existingSession: null,
       cookieDefaults: undefined,
       secret: 'my-secret',
-      store: new MemoryStore(),
-      res: mockRes(),
-      cookieName: 'sid',
+      storage: new MemoryStorage(),
     });
 
     expect(sess.signedId).toBeDefined();
@@ -86,38 +73,34 @@ describe('createSession', () => {
 
   describe('save', () => {
     it('persists session to store', async () => {
-      const store = new MemoryStore();
+      const storage = new MemoryStorage();
       const { sess } = createSession({
         sessionId: 'test-id',
         existingSession: null,
         cookieDefaults: undefined,
         secret: 'secret',
-        store,
-        res: mockRes(),
-        cookieName: 'sid',
+        storage,
       });
 
       sess.username = 'alice';
       await sess.save();
-      const stored = store.get('test-id');
+      const stored = storage.get('test-id');
       expect(stored?.data.username).toBe('alice');
     });
 
     it('does not persist after destroy', async () => {
-      const store = new MemoryStore();
+      const storage = new MemoryStorage();
       const { sess } = createSession({
         sessionId: 'test-id',
         existingSession: null,
         cookieDefaults: undefined,
         secret: 'secret',
-        store,
-        res: mockRes(),
-        cookieName: 'sid',
+        storage,
       });
 
       await sess.destroy();
       await sess.save();
-      expect(store.get('test-id')).toBeNull();
+      expect(storage.get('test-id')).toBeNull();
     });
 
     it('invokes callback on success', async () => {
@@ -127,9 +110,7 @@ describe('createSession', () => {
         existingSession: null,
         cookieDefaults: undefined,
         secret: 'secret',
-        store: new MemoryStore(),
-        res: mockRes(),
-        cookieName: 'sid',
+        storage: new MemoryStorage(),
       });
 
       await sess.save(callback);
@@ -139,20 +120,18 @@ describe('createSession', () => {
 
   describe('destroy', () => {
     it('removes session from store', async () => {
-      const store = new MemoryStore();
+      const storage = new MemoryStorage();
       const { sess } = createSession({
         sessionId: 'test-id',
         existingSession: null,
         cookieDefaults: undefined,
         secret: 'secret',
-        store,
-        res: mockRes(),
-        cookieName: 'sid',
+        storage,
       });
 
       await sess.save();
       await sess.destroy();
-      expect(store.get('test-id')).toBeNull();
+      expect(storage.get('test-id')).toBeNull();
     });
 
     it('sets destroyed flag', async () => {
@@ -161,9 +140,7 @@ describe('createSession', () => {
         existingSession: null,
         cookieDefaults: undefined,
         secret: 'secret',
-        store: new MemoryStore(),
-        res: mockRes(),
-        cookieName: 'sid',
+        storage: new MemoryStorage(),
       });
 
       expect(result.destroyed).toBe(false);
@@ -179,9 +156,7 @@ describe('createSession', () => {
         existingSession: null,
         cookieDefaults: undefined,
         secret: 'secret',
-        store: new MemoryStore(),
-        res: mockRes(),
-        cookieName: 'sid',
+        storage: new MemoryStorage(),
       });
 
       await sess.regenerate();
@@ -189,20 +164,18 @@ describe('createSession', () => {
     });
 
     it('destroys old session in store', async () => {
-      const store = new MemoryStore();
+      const storage = new MemoryStorage();
       const { sess } = createSession({
         sessionId: 'old-id',
         existingSession: null,
         cookieDefaults: undefined,
         secret: 'secret',
-        store,
-        res: mockRes(),
-        cookieName: 'sid',
+        storage,
       });
 
       await sess.save();
       await sess.regenerate();
-      expect(store.get('old-id')).toBeNull();
+      expect(storage.get('old-id')).toBeNull();
     });
 
     it('resets destroyed flag', async () => {
@@ -211,9 +184,7 @@ describe('createSession', () => {
         existingSession: null,
         cookieDefaults: undefined,
         secret: 'secret',
-        store: new MemoryStore(),
-        res: mockRes(),
-        cookieName: 'sid',
+        storage: new MemoryStorage(),
       });
 
       await result.sess.destroy();
@@ -228,9 +199,7 @@ describe('createSession', () => {
         existingSession: null,
         cookieDefaults: undefined,
         secret: 'secret',
-        store: new MemoryStore(),
-        res: mockRes(),
-        cookieName: 'sid',
+        storage: new MemoryStorage(),
       });
 
       expect(result.regenerated).toBe(false);
@@ -247,9 +216,7 @@ describe('createSession', () => {
         existingSession: null,
         cookieDefaults: undefined,
         secret: 'secret',
-        store: new FailingStore(),
-        res: mockRes(),
-        cookieName: 'sid',
+        storage: new FailingStorage(),
       });
 
       await sess.save(callback);
@@ -262,9 +229,7 @@ describe('createSession', () => {
         existingSession: null,
         cookieDefaults: undefined,
         secret: 'secret',
-        store: new FailingStore(),
-        res: mockRes(),
-        cookieName: 'sid',
+        storage: new FailingStorage(),
       });
 
       await expect(sess.save()).rejects.toThrow('store write failed');
@@ -277,9 +242,7 @@ describe('createSession', () => {
         existingSession: null,
         cookieDefaults: undefined,
         secret: 'secret',
-        store: new FailingStore(),
-        res: mockRes(),
-        cookieName: 'sid',
+        storage: new FailingStorage(),
       });
 
       await sess.destroy(callback);
@@ -292,9 +255,7 @@ describe('createSession', () => {
         existingSession: null,
         cookieDefaults: undefined,
         secret: 'secret',
-        store: new FailingStore(),
-        res: mockRes(),
-        cookieName: 'sid',
+        storage: new FailingStorage(),
       });
 
       await expect(sess.destroy()).rejects.toThrow('store destroy failed');
@@ -307,9 +268,7 @@ describe('createSession', () => {
         existingSession: null,
         cookieDefaults: undefined,
         secret: 'secret',
-        store: new FailingStore(),
-        res: mockRes(),
-        cookieName: 'sid',
+        storage: new FailingStorage(),
       });
 
       await sess.regenerate(callback);
@@ -322,9 +281,7 @@ describe('createSession', () => {
         existingSession: null,
         cookieDefaults: undefined,
         secret: 'secret',
-        store: new FailingStore(),
-        res: mockRes(),
-        cookieName: 'sid',
+        storage: new FailingStorage(),
       });
 
       await expect(sess.regenerate()).rejects.toThrow('store destroy failed');

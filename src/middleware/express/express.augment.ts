@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-namespace */
 
-import type { Session } from './session.js';
+import type { Session } from '../../core/session.js';
 
 declare global {
   namespace Express {

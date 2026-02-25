@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { MemoryStore } from './memory.js';
-import type { StoredSession } from '../types/index.js';
+import { MemoryStorage } from './memory.js';
+import type { StoredSession } from '../core/session.js';
 
 function makeStored(overrides?: Partial<StoredSession['cookie']>): StoredSession {
   return {
@@ -16,37 +16,37 @@ function makeStored(overrides?: Partial<StoredSession['cookie']>): StoredSession
   };
 }
 
-describe('MemoryStore', () => {
+describe('MemoryStorage', () => {
   it('stores and retrieves a session', () => {
-    const store = new MemoryStore();
+    const storage = new MemoryStorage();
     const session = makeStored();
-    store.set('abc', session);
-    expect(store.get('abc')).toEqual(session);
+    storage.set('abc', session);
+    expect(storage.get('abc')).toEqual(session);
   });
 
   it('returns null for unknown id', () => {
-    const store = new MemoryStore();
-    expect(store.get('nonexistent')).toBeNull();
+    const storage = new MemoryStorage();
+    expect(storage.get('nonexistent')).toBeNull();
   });
 
   it('destroys a session', () => {
-    const store = new MemoryStore();
-    store.set('abc', makeStored());
-    store.destroy('abc');
-    expect(store.get('abc')).toBeNull();
+    const storage = new MemoryStorage();
+    storage.set('abc', makeStored());
+    storage.destroy('abc');
+    expect(storage.get('abc')).toBeNull();
   });
 
   it('returns null and cleans up expired sessions', () => {
-    const store = new MemoryStore();
+    const storage = new MemoryStorage();
     const expired = makeStored({ expires: new Date(Date.now() - 1000) });
-    store.set('old', expired);
-    expect(store.get('old')).toBeNull();
+    storage.set('old', expired);
+    expect(storage.get('old')).toBeNull();
   });
 
   it('returns session when not yet expired', () => {
-    const store = new MemoryStore();
+    const storage = new MemoryStorage();
     const valid = makeStored({ expires: new Date(Date.now() + 60_000) });
-    store.set('fresh', valid);
-    expect(store.get('fresh')).toEqual(valid);
+    storage.set('fresh', valid);
+    expect(storage.get('fresh')).toEqual(valid);
   });
 });

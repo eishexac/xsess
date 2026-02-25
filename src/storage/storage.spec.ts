@@ -1,8 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
-import { Store } from './store.js';
-import type { StoredSession } from '../types/index.js';
+import { Storage } from './storage.js';
+import type { StoredSession } from '../core/session.js';
 
-class TestStore extends Store {
+class TestStorage extends Storage {
   public data = new Map<string, StoredSession>();
 
   get(id: string) {
@@ -41,37 +41,37 @@ function makeStored(expires?: Date): StoredSession {
   };
 }
 
-describe('Store', () => {
+describe('Storage', () => {
   describe('isExpired', () => {
     it('returns false when no expiry is set', () => {
-      const store = new TestStore();
-      expect(store.testIsExpired(makeStored())).toBe(false);
+      const storage = new TestStorage();
+      expect(storage.testIsExpired(makeStored())).toBe(false);
     });
 
     it('returns false for future expiry', () => {
-      const store = new TestStore();
-      expect(store.testIsExpired(makeStored(new Date(Date.now() + 60_000)))).toBe(false);
+      const storage = new TestStorage();
+      expect(storage.testIsExpired(makeStored(new Date(Date.now() + 60_000)))).toBe(false);
     });
 
     it('returns true for past expiry', () => {
-      const store = new TestStore();
-      expect(store.testIsExpired(makeStored(new Date(Date.now() - 1000)))).toBe(true);
+      const storage = new TestStorage();
+      expect(storage.testIsExpired(makeStored(new Date(Date.now() - 1000)))).toBe(true);
     });
 
     it('returns true when expiry is exactly now', () => {
       vi.useFakeTimers({ now: new Date('2025-01-01T00:00:00Z') });
-      const store = new TestStore();
-      expect(store.testIsExpired(makeStored(new Date('2025-01-01T00:00:00Z')))).toBe(true);
+      const storage = new TestStorage();
+      expect(storage.testIsExpired(makeStored(new Date('2025-01-01T00:00:00Z')))).toBe(true);
       vi.useRealTimers();
     });
   });
 
   describe('touch', () => {
     it('delegates to set by default', async () => {
-      const store = new TestStore();
+      const storage = new TestStorage();
       const session = makeStored();
-      await store.testTouch('abc', session);
-      expect(store.data.get('abc')).toBe(session);
+      await storage.testTouch('abc', session);
+      expect(storage.data.get('abc')).toBe(session);
     });
   });
 });

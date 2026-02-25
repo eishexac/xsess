@@ -1,13 +1,15 @@
+// Side-effect: augments Express.Request with session property
+import './express.augment.js';
+
 import type { Request, Response, NextFunction, RequestHandler } from 'express';
 import cookie from 'cookie';
 import { unsign } from 'cookie-signature';
 import onHeaders from 'on-headers';
 import { v7 as uuid7 } from 'uuid';
-import { setSessionCookie } from './cookie.js';
-import { createSession } from './session.js';
-import { extractSessionData, toStoredSession } from './utils.js';
-import { MemoryStore } from './stores/index.js';
-import type { SessionOptions } from './types/index.js';
+import { buildSetCookieHeader, buildClearCookieHeader } from '../../core/cookie.js';
+import { createSession, extractSessionData, toStoredSession } from '../../core/session.js';
+import { MemoryStorage } from '../../storage/memory.js';
+import type { SessionOptions } from '../../core/resolve.js';
 
 /**
  * Creates an Express session middleware.
@@ -20,13 +22,14 @@ import type { SessionOptions } from './types/index.js';
  *
  * @example
  * ```ts
+ * import { session } from 'xsess/express';
  * app.use(session({ secret: 'my-secret' }));
  * ```
  */
 export function session(options: SessionOptions): RequestHandler {
   const name = options.name ?? 'sid';
   const secret = options.secret;
-  const store = options.store ?? new MemoryStore();
+  const storage = options.storage ?? new MemoryStorage();
   const rolling = options.rolling ?? false;
   const resave = options.resave ?? false;
   const saveUninitialized = options.saveUninitialized ?? false;
@@ -48,7 +51,7 @@ export function session(options: SessionOptions): RequestHandler {
       if (cookieVal && cookieVal.startsWith('s:')) {
         const unsigned = unsign(cookieVal.slice(2), secret);
         if (unsigned !== false) {
-          existingSession = await store.get(unsigned);
+          existingSession = await storage.get(unsigned);
           if (existingSession) sessionId = unsigned;
         }
       }
@@ -56,7 +59,7 @@ export function session(options: SessionOptions): RequestHandler {
       if (!sessionId && headerVal) {
         const unsigned = unsign(headerVal, secret);
         if (unsigned !== false) {
-          existingSession = await store.get(unsigned);
+          existingSession = await storage.get(unsigned);
           if (existingSession) sessionId = unsigned;
         }
       }
@@ -69,9 +72,7 @@ export function session(options: SessionOptions): RequestHandler {
         existingSession,
         cookieDefaults,
         secret,
-        store,
-        res,
-        cookieName: name,
+        storage,
       });
 
       req.session = result.sess;
@@ -79,13 +80,21 @@ export function session(options: SessionOptions): RequestHandler {
       const snapshot = isNew ? null : JSON.stringify(extractSessionData(result.sess));
 
       onHeaders(res, () => {
-        if (result.destroyed) return;
+        if (result.destroyed) {
+          appendSetCookieHeader(res, buildClearCookieHeader(name, result.sess.cookie));
+          return;
+        }
 
         if (isNew || rolling || result.regenerated) {
           if ((rolling || result.regenerated) && result.sess.cookie.originalMaxAge != null) {
-            result.sess.cookie.expires = new Date(Date.now() + result.sess.cookie.originalMaxAge);
+            result.sess.cookie.expires = new Date(
+              Date.now() + result.sess.cookie.originalMaxAge * 1000,
+            );
           }
-          setSessionCookie(res, name, result.sess.id, result.sess.cookie, secret);
+          appendSetCookieHeader(
+            res,
+            buildSetCookieHeader(name, result.sess.id, result.sess.cookie, secret),
+          );
         }
 
         const shouldSetHeader =
@@ -123,7 +132,7 @@ export function session(options: SessionOptions): RequestHandler {
         }
 
         try {
-          const saved: unknown = store.set(result.sess.id, toStoredSession(result.sess));
+          const saved: unknown = storage.set(result.sess.id, toStoredSession(result.sess));
           if (saved instanceof Promise) {
             void saved.then(
               () => _end.apply(this, args),
@@ -132,7 +141,7 @@ export function session(options: SessionOptions): RequestHandler {
             return this;
           }
         } catch {
-          // Sync store error — still complete the response
+          // Sync storage error — still complete the response
         }
 
         return _end.apply(this, args);
@@ -143,4 +152,15 @@ export function session(options: SessionOptions): RequestHandler {
       next(err as Error);
     }
   };
+}
+
+function appendSetCookieHeader(res: Response, value: string): void {
+  const existing = res.getHeader('Set-Cookie');
+  if (!existing) {
+    res.setHeader('Set-Cookie', value);
+  } else if (Array.isArray(existing)) {
+    res.setHeader('Set-Cookie', [...existing, value]);
+  } else {
+    res.setHeader('Set-Cookie', [existing as string, value]);
+  }
 }

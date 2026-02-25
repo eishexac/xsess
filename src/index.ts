@@ -1,8 +1,13 @@
-// Side-effect: augments Express.Request with session property
-import './types/express.augment.js';
-
-export { session } from './middleware.js';
-export { Store } from './stores/index.js';
-export type { Session, SessionData, SessionCookie, StoredSession } from './types/index.js';
-export type { SessionStore } from './types/index.js';
-export type { SessionOptions, HeaderOptions, HeaderPolicy } from './types/index.js';
+export { Storage } from './storage/storage.js';
+export type {
+  CookieOptions,
+  Session,
+  SessionData,
+  SessionCookie,
+  StoredSession,
+} from './core/session.js';
+export type {
+  SessionOptions,
+  HeaderOptions,
+  HeaderPolicy,
+} from './core/resolve.js';

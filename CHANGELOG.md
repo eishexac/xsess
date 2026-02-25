@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.5] - 2026-02-25
+
+### Added
+
+- **Multi-framework support** — xsess is now framework-agnostic with a Web Standard core
+- **Hono middleware** via `xsess/hono` with typed `c.get('session')` support
+- **`resolveSession()`** — framework-agnostic core function using Web Standard `Request`/`Response`, enabling integration with any framework (Elysia, SvelteKit, etc.)
+- Hono `ContextVariableMap` type augmentation for `session`
+- Hono e2e test suite (31 tests)
+- Core `resolveSession` unit tests (14 tests)
+- Cookie utility unit tests (22 tests)
+
+### Changed
+
+- **Breaking:** Import paths changed — use `xsess/express` for Express middleware, `xsess/hono` for Hono middleware
+- **Breaking:** `store` option renamed to `storage`
+- **Breaking:** `Store` base class renamed to `Storage` (import from `xsess`)
+- **Breaking:** `CookieOptions` now uses the `cookie` package's `SerializeOptions` type — `maxAge` is now in **seconds** (was milliseconds)
+- Express and Hono are now optional peer dependencies
+- `CookieOptions` type sourced from the `cookie` package instead of Express
+- Express `Request.session` augmentation now scoped to `xsess/express` import
+
+### Removed
+
+- Root `session()` export — use `xsess/express` or `xsess/hono` instead
+- `MemoryStore` / `MemoryStorage` is no longer exported (internal only, used as default)
+- `SessionStore` interface — use the `Storage` abstract class instead
+- Express `CookieOptions` dependency
+
 ## [0.0.4] - 2026-02-08
 
 ### Added

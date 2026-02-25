@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { extractSessionData, toStoredSession } from './utils.js';
-import type { Session, SessionCookie } from './types/index.js';
+import { extractSessionData, toStoredSession, type Session, type SessionCookie } from './session.js';
 
 function makeCookie(): SessionCookie {
   return { path: '/', httpOnly: true, sameSite: 'lax', secure: false, originalMaxAge: null };

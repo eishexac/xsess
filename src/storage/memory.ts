@@ -1,7 +1,7 @@
-import type { StoredSession } from '../types/index.js';
-import { Store } from './store.js';
+import type { StoredSession } from '../core/session.js';
+import { Storage } from './storage.js';
 
-export class MemoryStore extends Store {
+export class MemoryStorage extends Storage {
   private sessions = new Map<string, StoredSession>();
 
   public get(id: string): StoredSession | null {
