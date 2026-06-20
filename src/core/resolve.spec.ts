@@ -7,10 +7,17 @@ import { MemoryStorage } from '../storage/memory.js';
 
 const SECRET = 'test-secret';
 
-function makeRequest(opts: { cookies?: Record<string, string>; headers?: Record<string, string> } = {}): Request {
+function makeRequest(
+  opts: { cookies?: Record<string, string>; headers?: Record<string, string> } = {},
+): Request {
   const headers = new Headers();
   if (opts.cookies && Object.keys(opts.cookies).length > 0) {
-    headers.set('cookie', Object.entries(opts.cookies).map(([k, v]) => cookie.serialize(k, v)).join('; '));
+    headers.set(
+      'cookie',
+      Object.entries(opts.cookies)
+        .map(([k, v]) => cookie.serialize(k, v))
+        .join('; '),
+    );
   }
   if (opts.headers) {
     for (const [k, v] of Object.entries(opts.headers)) {
@@ -55,7 +62,7 @@ describe('resolveSession', () => {
     // Extract the Set-Cookie value
     const setCookieHeader = headers.find(([k]) => k === 'Set-Cookie')![1];
     const parsed = cookie.parse(setCookieHeader);
-    const sidValue = parsed['sid'];
+    const sidValue = parsed['sid']!;
 
     // Make a new request with that cookie
     const req2 = makeRequest({ cookies: { sid: sidValue } });
@@ -111,6 +118,38 @@ describe('resolveSession', () => {
     expect(result2.session.count).toBe(5);
   });
 
+  it('resolves storage from a factory', async () => {
+    const storage = new MemoryStorage();
+    const opts = { secret: SECRET, storage: () => storage };
+
+    const req1 = makeRequest();
+    const result1 = await resolveSession(req1, opts);
+    result1.session.userId = 11;
+    await result1.session.save();
+
+    const signedId = sign(result1.session.id, SECRET);
+    const req2 = makeRequest({ headers: { 'X-Session': signedId } });
+    const result2 = await resolveSession(req2, opts);
+    expect(result2.isNew).toBe(false);
+    expect(result2.session.userId).toBe(11);
+  });
+
+  it('invokes the storage factory once when options are reused (memoized)', async () => {
+    const storage = new MemoryStorage();
+    let calls = 0;
+    const opts = resolveOptions({
+      secret: SECRET,
+      storage: () => {
+        calls++;
+        return storage;
+      },
+    });
+
+    await (await resolveSession(makeRequest(), opts)).finalize();
+    await (await resolveSession(makeRequest(), opts)).finalize();
+    expect(calls).toBe(1);
+  });
+
   describe('finalize', () => {
     it('returns Set-Cookie header for new session', async () => {
       const req = makeRequest();
@@ -146,6 +185,38 @@ describe('resolveSession', () => {
       const { headers } = await finalize();
       const sessionHeader = headers.find(([k]) => k === 'X-Session');
       expect(sessionHeader).toBeUndefined();
+    });
+
+    it('does not return Set-Cookie for empty new session when saveUninitialized is false', async () => {
+      const req = makeRequest();
+      const { finalize } = await resolveSession(req, {
+        secret: SECRET,
+        saveUninitialized: false,
+      });
+      const { headers } = await finalize();
+      expect(headers.find(([k]) => k === 'Set-Cookie')).toBeUndefined();
+    });
+
+    it('returns Set-Cookie for new session with data when saveUninitialized is false', async () => {
+      const req = makeRequest();
+      const { session, finalize } = await resolveSession(req, {
+        secret: SECRET,
+        saveUninitialized: false,
+      });
+      session.userId = 1;
+      const { headers } = await finalize();
+      expect(headers.find(([k]) => k === 'Set-Cookie')).toBeDefined();
+    });
+
+    it('does not return init header for empty new session when saveUninitialized is false', async () => {
+      const req = makeRequest();
+      const { finalize } = await resolveSession(req, {
+        secret: SECRET,
+        saveUninitialized: false,
+        header: { policy: 'init' },
+      });
+      const { headers } = await finalize();
+      expect(headers.find(([k]) => k === 'X-Session')).toBeUndefined();
     });
 
     it('does not save empty new session when saveUninitialized is false', async () => {

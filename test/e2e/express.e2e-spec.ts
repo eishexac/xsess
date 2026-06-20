@@ -243,6 +243,18 @@ describe('session middleware (e2e)', () => {
       expect(spy).toHaveBeenCalled();
     });
 
+    it('does not set cookie on empty new session when false', async () => {
+      const { app } = createApp();
+      const res = await request(app).get('/noop');
+      expect(extractSessionCookie(res)).toBeUndefined();
+    });
+
+    it('sets cookie on empty new session when true', async () => {
+      const { app } = createApp({ saveUninitialized: true });
+      const res = await request(app).get('/noop');
+      expect(extractSessionCookie(res)).toBeDefined();
+    });
+
     it('saveUninitialized does not affect existing modified sessions', async () => {
       const { app, storage } = createApp({ saveUninitialized: false });
       const agent = request.agent(app);

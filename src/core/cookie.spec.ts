@@ -1,5 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
-import { buildCookie, serializeCookie, buildSetCookieHeader, buildClearCookieHeader } from './cookie.js';
+import {
+  buildCookie,
+  serializeCookie,
+  buildSetCookieHeader,
+  buildClearCookieHeader,
+} from './cookie.js';
 import { unsign } from 'cookie-signature';
 import cookie from 'cookie';
 import type { SessionCookie } from './session.js';

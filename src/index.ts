@@ -1,4 +1,5 @@
 export { Storage } from './storage/storage.js';
+export type { StorageFactory } from './storage/storage.js';
 export type {
   CookieOptions,
   Session,
@@ -6,8 +7,4 @@ export type {
   SessionCookie,
   StoredSession,
 } from './core/session.js';
-export type {
-  SessionOptions,
-  HeaderOptions,
-  HeaderPolicy,
-} from './core/resolve.js';
+export type { SessionOptions, HeaderOptions, HeaderPolicy } from './core/resolve.js';

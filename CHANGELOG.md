@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.6] - 2026-06-21
+
+### Added
+
+- **Socket.IO adapter** via `xsess/socket.io` — a native connection middleware (`io.use()` / `io.of(ns).use()`) that resolves the session from the handshake (cookie first, then the `X-Session` header, then a `handshake.auth` token) and attaches it to `socket.data.session`. Read-only: it authenticates connections against sessions established over HTTP without minting a session or writing a cookie. Ships with a `getSession(socket)` accessor plus `required` (reject unauthenticated connections) and `authKey` options.
+- **Lazy storage** — the `storage` option now also accepts a `StorageFactory` (`() => Storage | Promise<Storage>`), resolved once on first use and memoized. Lets middleware be constructed before the storage exists (e.g. when it comes from a DI container resolved after boot).
+- `socket.io` added as an optional peer dependency.
+
+### Fixed
+
+- New sessions that are not persisted no longer emit a `Set-Cookie` (or `init` response header). Previously a new session always set the cookie even when `saveUninitialized` was `false` and no data was written — handing the client a session ID that was never stored, which then overwrote the real session on the next request. The cookie/header is now only sent when the session is actually saved. Affects both the Web Standard core (`xsess/hono` and `resolveSession`) and `xsess/express`.
+
 ## [0.0.5] - 2026-02-25
 
 ### Added

@@ -35,3 +35,12 @@ export abstract class Storage {
     return this.set(id, session);
   }
 }
+
+/**
+ * A storage instance, or a factory that lazily provides one (sync or async).
+ *
+ * Use a factory when the storage is not available when the middleware is
+ * constructed — e.g. it comes from a DI container resolved after boot. The
+ * factory is invoked once, on first use, and the result is memoized.
+ */
+export type StorageFactory = () => Storage | Promise<Storage>;

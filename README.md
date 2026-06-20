@@ -1,8 +1,8 @@
 # xsess
 
-Framework-agnostic session middleware with cookie and header support — works seamlessly with Express, Hono, and any Web Standard framework.
+Framework-agnostic session middleware with cookie and header support — works seamlessly with Express, Hono, Socket.IO, and any Web Standard framework.
 
-Unlike `express-session`, xsess accepts session tokens from both cookies and the `X-Session` header, making it a drop-in choice for APIs consumed by browsers, mobile apps, and other HTTP clients.
+Unlike `express-session`, xsess accepts session tokens from both cookies and the `X-Session` header, making it a drop-in choice for APIs consumed by browsers, mobile apps, and other HTTP clients — and it can authenticate WebSocket connections against the same sessions.
 
 ## Install
 
@@ -49,6 +49,31 @@ app.get('/', (c) => {
 });
 ```
 
+### Socket.IO
+
+Authenticate WebSocket connections against sessions established over HTTP. The middleware resolves the session from the handshake — cookie first, then the `X-Session` header, then a token under `socket.handshake.auth` — and attaches it to `socket.data.session`.
+
+```ts
+import { Server } from 'socket.io';
+import { session, getSession } from 'xsess/socket.io';
+
+const io = new Server();
+
+io.use(session({ secret: process.env.SESSION_SECRET!, required: true }));
+
+io.on('connection', (socket) => {
+  const sess = getSession(socket);
+  socket.emit('whoami', sess?.userId ?? null);
+});
+```
+
+It is read-only — a handshake has no response to write to, so it never creates a session or sets a cookie. Call `socket.data.session.save()` to persist changes made during the connection. In addition to the shared options below, the Socket.IO middleware accepts:
+
+| Option | Default | Behavior |
+|--------|---------|----------|
+| `required` | `false` | Reject the connection (calls `next(err)`) when no valid session is found. |
+| `authKey` | `'token'` | Key under `socket.handshake.auth` to read a signed session ID from, for clients that cannot send cookies/headers. |
+
 ## Options
 
 ```ts
@@ -59,7 +84,9 @@ session({
   // Secret for signing session IDs (required)
   secret: 'my-secret',
 
-  // Session storage (default: in-memory storage)
+  // Session storage (default: in-memory storage). Also accepts a factory
+  // `() => Storage | Promise<Storage>`, resolved lazily on first use — handy when
+  // the storage comes from a DI container resolved after the middleware is built.
   storage: new MyCustomStorage(),
 
   // Re-set cookie on every response to refresh maxAge (default: false)

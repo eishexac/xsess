@@ -9,6 +9,7 @@ import { v7 as uuid7 } from 'uuid';
 import { buildSetCookieHeader, buildClearCookieHeader } from '../../core/cookie.js';
 import { createSession, extractSessionData, toStoredSession } from '../../core/session.js';
 import { MemoryStorage } from '../../storage/memory.js';
+import type { Storage } from '../../storage/storage.js';
 import type { SessionOptions } from '../../core/resolve.js';
 
 /**
@@ -29,7 +30,18 @@ import type { SessionOptions } from '../../core/resolve.js';
 export function session(options: SessionOptions): RequestHandler {
   const name = options.name ?? 'sid';
   const secret = options.secret;
-  const storage = options.storage ?? new MemoryStorage();
+  const storageOption = options.storage;
+  let storagePromise: Promise<Storage> | undefined;
+  const getStorage = (): Promise<Storage> => {
+    if (!storagePromise) {
+      const resolved =
+        typeof storageOption === 'function'
+          ? storageOption()
+          : (storageOption ?? new MemoryStorage());
+      storagePromise = Promise.resolve(resolved);
+    }
+    return storagePromise;
+  };
   const rolling = options.rolling ?? false;
   const resave = options.resave ?? false;
   const saveUninitialized = options.saveUninitialized ?? false;
@@ -41,6 +53,8 @@ export function session(options: SessionOptions): RequestHandler {
     if (req.session) return next();
 
     try {
+      const storage = await getStorage();
+
       let sessionId: string | null = null;
       let existingSession = null;
 
@@ -79,13 +93,37 @@ export function session(options: SessionOptions): RequestHandler {
 
       const snapshot = isNew ? null : JSON.stringify(extractSessionData(result.sess));
 
+      // Single source of truth shared by the cookie/header gate and the save
+      // path so the two cannot diverge.
+      const shouldSave = (): boolean => {
+        if (result.destroyed) return false;
+        if (
+          !saveUninitialized &&
+          isNew &&
+          Object.keys(extractSessionData(result.sess)).length === 0
+        ) {
+          return false;
+        }
+        if (
+          !resave &&
+          !isNew &&
+          !result.regenerated &&
+          JSON.stringify(extractSessionData(result.sess)) === snapshot
+        ) {
+          return false;
+        }
+        return true;
+      };
+
       onHeaders(res, () => {
         if (result.destroyed) {
           appendSetCookieHeader(res, buildClearCookieHeader(name, result.sess.cookie));
           return;
         }
 
-        if (isNew || rolling || result.regenerated) {
+        const establishingNew = isNew && shouldSave();
+
+        if (establishingNew || (!isNew && (rolling || result.regenerated))) {
           if ((rolling || result.regenerated) && result.sess.cookie.originalMaxAge != null) {
             result.sess.cookie.expires = new Date(
               Date.now() + result.sess.cookie.originalMaxAge * 1000,
@@ -98,7 +136,8 @@ export function session(options: SessionOptions): RequestHandler {
         }
 
         const shouldSetHeader =
-          headerPolicy === 'always' || (headerPolicy === 'init' && (isNew || result.regenerated));
+          headerPolicy === 'always' ||
+          (headerPolicy === 'init' && (establishingNew || result.regenerated));
 
         if (shouldSetHeader) {
           res.setHeader(headerName, result.sess.signedId);
@@ -110,24 +149,7 @@ export function session(options: SessionOptions): RequestHandler {
       res.end = function end(this: Response, ...args: any[]) {
         res.end = _end as typeof res.end;
 
-        if (result.destroyed) {
-          return _end.apply(this, args);
-        }
-
-        if (
-          !saveUninitialized &&
-          isNew &&
-          Object.keys(extractSessionData(result.sess)).length === 0
-        ) {
-          return _end.apply(this, args);
-        }
-
-        if (
-          !resave &&
-          !isNew &&
-          !result.regenerated &&
-          JSON.stringify(extractSessionData(result.sess)) === snapshot
-        ) {
+        if (!shouldSave()) {
           return _end.apply(this, args);
         }
 

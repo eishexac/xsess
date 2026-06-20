@@ -1,6 +1,6 @@
 {
   "name": "xsess",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "description": "Framework-agnostic session middleware with cookie and header support",
   "author": {
     "name": "hexac",
@@ -39,6 +39,10 @@
     "./hono": {
       "types": "./dist/middleware/hono/hono.d.ts",
       "import": "./dist/middleware/hono/hono.js"
+    },
+    "./socket.io": {
+      "types": "./dist/middleware/socketio/socketio.d.ts",
+      "import": "./dist/middleware/socketio/socketio.js"
     }
   },
   "scripts": {
@@ -82,6 +86,7 @@
     "lint-staged": "^16.2.7",
     "prettier": "^3.7.4",
     "rimraf": "^6.1.2",
+    "socket.io": "^4.8.3",
     "supertest": "^7.2.2",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.50.0",
@@ -89,13 +94,17 @@
   },
   "peerDependencies": {
     "express": "^4.0.0 || ^5.0.0",
-    "hono": "^4.0.0"
+    "hono": "^4.0.0",
+    "socket.io": "^4.0.0"
   },
   "peerDependenciesMeta": {
     "express": {
       "optional": true
     },
     "hono": {
+      "optional": true
+    },
+    "socket.io": {
       "optional": true
     }
   }

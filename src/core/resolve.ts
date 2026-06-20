@@ -8,8 +8,9 @@ import {
   toStoredSession,
   type CookieOptions,
   type Session,
+  type StoredSession,
 } from './session.js';
-import type { Storage } from '../storage/storage.js';
+import type { Storage, StorageFactory } from '../storage/storage.js';
 import { MemoryStorage } from '../storage/memory.js';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -37,8 +38,8 @@ export interface SessionOptions {
   name?: string;
   /** Secret for signing session IDs */
   secret: string;
-  /** Session storage. Default: MemoryStorage */
-  storage?: Storage;
+  /** Session storage, or a factory that lazily provides one. Default: MemoryStorage */
+  storage?: Storage | StorageFactory;
   /** Re-set cookie on every response to refresh maxAge. Default: false */
   rolling?: boolean;
   /** Save session to the storage on every response, even if it was not modified. Default: false */
@@ -69,7 +70,7 @@ export interface SessionResult {
 export interface ResolvedOptions {
   name: string;
   secret: string;
-  storage: Storage;
+  storage: Storage | StorageFactory;
   rolling: boolean;
   resave: boolean;
   saveUninitialized: boolean;
@@ -95,38 +96,58 @@ export function resolveOptions(options: SessionOptions): ResolvedOptions {
   };
 }
 
-/**
- * Resolve a session from a Web Standard {@link Request}.
- *
- * Framework-agnostic core. Returns the session and a `finalize()` function
- * that must be called to compute response headers and persist the session.
- */
-export async function resolveSession(
-  req: Request,
-  options: SessionOptions | ResolvedOptions,
-): Promise<SessionResult> {
-  const opts =
-    'secret' in options && 'storage' in options && 'rolling' in options
-      ? (options as ResolvedOptions)
-      : resolveOptions(options);
+/** @internal Headers source accepted by the header-based resolvers. */
+type HeadersInput = Headers | Record<string, string | string[] | undefined>;
 
-  const {
-    name,
-    secret,
-    storage,
-    rolling,
-    resave,
-    saveUninitialized,
-    headerName,
-    headerPolicy,
-    cookieDefaults,
-  } = opts;
+/** @internal Read a single header value, case-insensitively, from either source. */
+function getHeader(headers: HeadersInput, name: string): string | null {
+  if (headers instanceof Headers) return headers.get(name);
+  const target = name.toLowerCase();
+  for (const key of Object.keys(headers)) {
+    if (key.toLowerCase() === target) {
+      const value = headers[key];
+      if (value == null) return null;
+      return Array.isArray(value) ? value.join('; ') : value;
+    }
+  }
+  return null;
+}
+
+/** @internal Coerce raw or already-resolved options to {@link ResolvedOptions}. */
+function asResolved(options: SessionOptions | ResolvedOptions): ResolvedOptions {
+  return 'secret' in options && 'storage' in options && 'rolling' in options
+    ? (options as ResolvedOptions)
+    : resolveOptions(options);
+}
+
+const storageMemo = new WeakMap<ResolvedOptions, Promise<Storage>>();
+
+/** @internal Resolve the storage, invoking and memoizing a factory if given. */
+function getStorage(opts: ResolvedOptions): Promise<Storage> {
+  if (typeof opts.storage !== 'function') return Promise.resolve(opts.storage);
+  let memo = storageMemo.get(opts);
+  if (!memo) {
+    memo = Promise.resolve(opts.storage());
+    storageMemo.set(opts, memo);
+  }
+  return memo;
+}
+
+/**
+ * @internal Look up an existing session from the cookie first, then the header.
+ * Returns the matched ID and its stored session, or nulls when none is found.
+ */
+async function resolveExisting(
+  headers: HeadersInput,
+  opts: ResolvedOptions,
+  storage: Storage,
+): Promise<{ sessionId: string | null; existingSession: StoredSession | null }> {
+  const { name, secret, headerName } = opts;
 
   let sessionId: string | null = null;
-  let existingSession = null;
+  let existingSession: StoredSession | null = null;
 
-  // Resolve from cookie
-  const cookieHeader = req.headers.get('cookie');
+  const cookieHeader = getHeader(headers, 'cookie');
   const rawCookies = cookieHeader ? cookie.parse(cookieHeader) : {};
   const cookieVal = rawCookies[name];
 
@@ -138,8 +159,7 @@ export async function resolveSession(
     }
   }
 
-  // Resolve from header
-  const headerVal = req.headers.get(headerName);
+  const headerVal = getHeader(headers, headerName);
   if (!sessionId && headerVal) {
     const unsigned = unsign(headerVal, secret);
     if (unsigned !== false) {
@@ -148,8 +168,40 @@ export async function resolveSession(
     }
   }
 
-  const isNew = sessionId == null;
-  sessionId = sessionId ?? uuid7();
+  return { sessionId, existingSession };
+}
+
+/**
+ * Resolve a session from a Web Standard {@link Request}.
+ *
+ * Framework-agnostic core. Returns the session and a `finalize()` function
+ * that must be called to compute response headers and persist the session.
+ */
+export async function resolveSession(
+  req: Request,
+  options: SessionOptions | ResolvedOptions,
+): Promise<SessionResult> {
+  const opts = asResolved(options);
+  const storage = await getStorage(opts);
+
+  const {
+    name,
+    secret,
+    rolling,
+    resave,
+    saveUninitialized,
+    headerName,
+    headerPolicy,
+    cookieDefaults,
+  } = opts;
+
+  const { sessionId: resolvedId, existingSession } = await resolveExisting(
+    req.headers,
+    opts,
+    storage,
+  );
+  const isNew = resolvedId == null;
+  const sessionId = resolvedId ?? uuid7();
 
   const result = createSession({
     sessionId,
@@ -172,7 +224,19 @@ export async function resolveSession(
         return { headers };
       }
 
-      if (isNew || rolling || result.regenerated) {
+      const shouldSave = !(
+        (!saveUninitialized &&
+          isNew &&
+          Object.keys(extractSessionData(result.sess)).length === 0) ||
+        (!resave &&
+          !isNew &&
+          !result.regenerated &&
+          JSON.stringify(extractSessionData(result.sess)) === snapshot)
+      );
+
+      const establishingNew = isNew && shouldSave;
+
+      if (establishingNew || (!isNew && (rolling || result.regenerated))) {
         if ((rolling || result.regenerated) && result.sess.cookie.originalMaxAge != null) {
           result.sess.cookie.expires = new Date(
             Date.now() + result.sess.cookie.originalMaxAge * 1000,
@@ -185,20 +249,11 @@ export async function resolveSession(
       }
 
       const shouldSetHeader =
-        headerPolicy === 'always' || (headerPolicy === 'init' && (isNew || result.regenerated));
+        headerPolicy === 'always' ||
+        (headerPolicy === 'init' && (establishingNew || result.regenerated));
       if (shouldSetHeader) {
         headers.push([headerName, result.sess.signedId]);
       }
-
-      const shouldSave = !(
-        (!saveUninitialized &&
-          isNew &&
-          Object.keys(extractSessionData(result.sess)).length === 0) ||
-        (!resave &&
-          !isNew &&
-          !result.regenerated &&
-          JSON.stringify(extractSessionData(result.sess)) === snapshot)
-      );
 
       if (shouldSave) {
         await storage.set(result.sess.id, toStoredSession(result.sess));
@@ -207,4 +262,33 @@ export async function resolveSession(
       return { headers };
     },
   };
+}
+
+/**
+ * @internal Resolve an existing session directly from request headers (cookie
+ * first, then header). Read-only: never mints a new session, writes a cookie, or
+ * persists. Returns `null` when no valid session is found.
+ *
+ * Backs adapters where there is no response to finalize, such as a WebSocket
+ * handshake.
+ */
+export async function resolveSessionFromHeaders(
+  headers: HeadersInput,
+  options: SessionOptions | ResolvedOptions,
+): Promise<Session | null> {
+  const opts = asResolved(options);
+  const storage = await getStorage(opts);
+  const { sessionId, existingSession } = await resolveExisting(headers, opts, storage);
+
+  if (sessionId == null || existingSession == null) return null;
+
+  const { sess } = createSession({
+    sessionId,
+    existingSession,
+    cookieDefaults: opts.cookieDefaults,
+    secret: opts.secret,
+    storage,
+  });
+
+  return sess;
 }

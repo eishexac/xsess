@@ -237,6 +237,18 @@ describe('Hono session middleware (e2e)', () => {
       await app.request('/noop');
       expect(spy).toHaveBeenCalled();
     });
+
+    it('does not set cookie on empty new session when false', async () => {
+      const { app } = createApp();
+      const res = await app.request('/noop');
+      expect(extractSessionCookie(res)).toBeUndefined();
+    });
+
+    it('sets cookie on empty new session when true', async () => {
+      const { app } = createApp({ saveUninitialized: true });
+      const res = await app.request('/noop');
+      expect(extractSessionCookie(res)).toBeDefined();
+    });
   });
 
   describe('header-based sessions (continued)', () => {
